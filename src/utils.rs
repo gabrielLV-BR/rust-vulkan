@@ -4,6 +4,7 @@ use log::{error, warn, debug, trace};
 
 use vulkanalia::vk;
 
+// Troço verboso dos infernos mas é bem auto-explicativo
 pub extern "system" fn debug_callback(
   severity: vk::DebugUtilsMessageSeverityFlagsEXT,
   type_: vk::DebugUtilsMessageTypeFlagsEXT,
