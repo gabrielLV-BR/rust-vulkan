@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use vulkanalia::{
     loader::{LibloadingLoader, LIBRARY},
     prelude::v1_0::*,
-    vk::ExtDebugUtilsExtension,
+    vk::{ExtDebugUtilsExtension, KhrSurfaceExtension},
     window as vk_window,
 };
 use winit::window::Window;
@@ -40,6 +40,7 @@ impl App {
 
         // Instância do Vulkan, necessário pra usar ele
         let instance = App::create_instance(window, &entry, &mut data)?;
+        data.surface = vk_window::create_surface(&instance, window)?;
 
         App::pick_physical_device(&instance, &mut data)?;
 
@@ -53,7 +54,7 @@ impl App {
         })
     }
 
-    pub unsafe fn create_logical_device(instance: &Instance, data: &mut AppData) 
+    unsafe fn create_logical_device(instance: &Instance, data: &mut AppData) 
         -> Result<Device> {
         let indices = 
             QueueFamilyIndices::get(instance, data, data.physical_device)?;
@@ -89,7 +90,7 @@ impl App {
         Ok(device)
     }
 
-    pub unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) 
+    unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) 
         -> Result<()> {
 
         for physical_device in instance.enumerate_physical_devices()? {
@@ -109,7 +110,7 @@ impl App {
         Err(anyhow!("Failed to find suitable physical device."))
     }
 
-    pub unsafe fn check_physical_device(
+    unsafe fn check_physical_device(
             instance: &Instance, 
             data: &mut AppData, 
             physical_device: vk::PhysicalDevice
@@ -143,6 +144,8 @@ impl App {
 
         // ... Nosso dispositivo virtual...
         self.device.destroy_device(None);
+        // ... Nosso Surface...
+        self.instance.destroy_surface_khr(self.data.surface, None);
         // ... E nós mesmos...
         self.instance.destroy_instance(None);
     }
@@ -220,4 +223,5 @@ pub struct AppData {
     messenger: vk::DebugUtilsMessengerEXT,
     physical_device: vk::PhysicalDevice,
     graphics_queue: vk::Queue,
+    surface: vk::SurfaceKHR,
 }
