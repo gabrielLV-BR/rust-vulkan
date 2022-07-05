@@ -10,7 +10,8 @@ use winit::window::Window;
 use std::collections::HashSet;
 use log::*;
 
-use crate::{VALIDATION_ENABLED, VALIDATION_LAYER, error::{SuitabilityError, QueueFamilyIndices, self}};
+use crate::{VALIDATION_ENABLED, VALIDATION_LAYER, 
+    error::{SuitabilityError, QueueFamilyIndices, self}};
 
 #[derive(Clone, Debug)]
 pub struct App {
@@ -21,6 +22,8 @@ pub struct App {
     instance: Instance,
     // Dados gerais necessários
     data: AppData,
+    // Referência lógica ao dispositivo (GPU)
+    device: Device,
 }
 
 impl App {
@@ -28,7 +31,10 @@ impl App {
         // Cria o Loader, que vai carregar o ponteiro das funçẽos do Vulkan
         let loader = LibloadingLoader::new(LIBRARY)?;
         // Entry realmente carrega os erros e tal
-        let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
+        let entry = Entry::new(loader)
+            .map_err(
+                |b| anyhow!("{}", b)
+            )?;
 
         let mut data = AppData::default();
 
@@ -36,19 +42,62 @@ impl App {
         let instance = App::create_instance(window, &entry, &mut data)?;
 
         App::pick_physical_device(&instance, &mut data)?;
+
+        let device = App::create_logical_device(&instance, &mut data)?;
+
         Ok(Self {
             entry,
             instance,
             data,
+            device
         })
     }
 
-    pub unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> Result<()> {
+    pub unsafe fn create_logical_device(instance: &Instance, data: &mut AppData) 
+        -> Result<Device> {
+        let indices = 
+            QueueFamilyIndices::get(instance, data, data.physical_device)?;
+
+        let queue_priorities = &[1.0];
+        let queue_info = 
+            vk::DeviceQueueCreateInfo::builder()
+            .queue_family_index(indices.graphics)
+            .queue_priorities(queue_priorities);
+
+        // Layers específicas ao dispositivo.
+        // Em Vulkan moderno  as layers do escopo da instância, isso é pra 
+        // ser compatível com versões anteriores que permitiam extensões
+        // especificas para cada dispositivo virtual
+        let layers = if VALIDATION_ENABLED {
+            vec![VALIDATION_LAYER.as_ptr()]
+        } else { vec![] };
+
+        // Recursos do dispositivo (o qual verificamos a existência no check_physical_device())
+        let features = vk::PhysicalDeviceFeatures::builder();
+
+        let queue_infos = &[queue_info];
+        let info = vk::DeviceCreateInfo::builder()
+            .queue_create_infos(queue_infos)
+            .enabled_layer_names(&layers)
+            .enabled_features(&features);
+
+        let device = 
+            instance.create_device(data.physical_device, &info, None)?;
+
+        data.graphics_queue = device.get_device_queue(indices.graphics, 0);
+
+        Ok(device)
+    }
+
+    pub unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) 
+        -> Result<()> {
 
         for physical_device in instance.enumerate_physical_devices()? {
-            let properties = instance.get_physical_device_properties(physical_device);
+            let properties = 
+                instance.get_physical_device_properties(physical_device);
 
-            if let Err(error) = App::check_physical_device(instance, data, physical_device) {
+            if let Err(error) = 
+                App::check_physical_device(instance, data, physical_device) {
                 warn!("Skipping phyisical device ('{}'): {}", properties.device_name, error);
             } else {
                 info!("Selected physical device ('{}').", properties.device_name);
@@ -60,13 +109,19 @@ impl App {
         Err(anyhow!("Failed to find suitable physical device."))
     }
 
-    pub unsafe fn check_physical_device(instance: &Instance, data: &mut AppData, physical_device: vk::PhysicalDevice) -> Result<()> {
-        let properties = instance.get_physical_device_properties(physical_device);
+    pub unsafe fn check_physical_device(
+            instance: &Instance, 
+            data: &mut AppData, 
+            physical_device: vk::PhysicalDevice
+        ) -> Result<()> {
+        let properties = 
+            instance.get_physical_device_properties(physical_device);
         if properties.device_type != vk::PhysicalDeviceType::DISCRETE_GPU {
             return Err(anyhow!(SuitabilityError("Only discrete GPUs supported")));
         }
         
-        let features = instance.get_physical_device_features(physical_device);
+        let features = 
+            instance.get_physical_device_features(physical_device);
         if features.geometry_shader != vk::TRUE {
             return Err(anyhow!(SuitabilityError("Missing geometry shader support")));
         }
@@ -86,6 +141,8 @@ impl App {
                 .destroy_debug_utils_messenger_ext(self.data.messenger, None);
         }
 
+        // ... Nosso dispositivo virtual...
+        self.device.destroy_device(None);
         // ... E nós mesmos...
         self.instance.destroy_instance(None);
     }
@@ -96,7 +153,8 @@ impl App {
         data: &mut AppData,
     ) -> Result<Instance> {
         // Descreve a aplicação
-        let application_info = vk::ApplicationInfo::builder()
+        let application_info = 
+            vk::ApplicationInfo::builder()
             .application_name(b"Vulkan Tutorial\0")
             .application_version(vk::make_version(1, 0, 0))
             .engine_name(b"No Engine\0")
@@ -104,7 +162,8 @@ impl App {
             .api_version(vk::make_version(1, 0, 0));
 
         // Extensões necessárias para a execução
-        let mut extensions = vk_window::get_required_instance_extensions(window)
+        let mut extensions = 
+            vk_window::get_required_instance_extensions(window)
             .iter()
             .map(|e| e.as_ptr())
             .collect::<Vec<_>>();
@@ -142,7 +201,8 @@ impl App {
 
         // Caso a validação esteja ligada, adicionamos um logger customizado
         if VALIDATION_ENABLED {
-            let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
+            let debug_info = 
+                vk::DebugUtilsMessengerCreateInfoEXT::builder()
                 .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::all())
                 .message_type(vk::DebugUtilsMessageTypeFlagsEXT::all())
                 .user_callback(Some(error::debug_callback));
@@ -158,5 +218,6 @@ impl App {
 #[derive(Clone, Debug, Default)]
 pub struct AppData {
     messenger: vk::DebugUtilsMessengerEXT,
-    physical_device: vk::PhysicalDevice
+    physical_device: vk::PhysicalDevice,
+    graphics_queue: vk::Queue,
 }

@@ -30,7 +30,7 @@ pub extern "system" fn debug_callback(
 
 #[derive(Copy, Clone, Debug)]
 pub struct QueueFamilyIndices {
-    graphics: u32,
+    pub graphics: u32,
 }
 
 impl QueueFamilyIndices {
