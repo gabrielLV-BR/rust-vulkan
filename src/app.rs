@@ -41,7 +41,6 @@ impl App {
         // Instância do Vulkan, necessário pra usar ele
         let instance = App::create_instance(window, &entry, &mut data)?;
         data.surface = vk_window::create_surface(&instance, window)?;
-
         App::pick_physical_device(&instance, &mut data)?;
 
         let device = App::create_logical_device(&instance, &mut data)?;
@@ -59,11 +58,18 @@ impl App {
         let indices = 
             QueueFamilyIndices::get(instance, data, data.physical_device)?;
 
+        let mut unique_indices = HashSet::new();
+        unique_indices.insert(indices.graphics);
+        unique_indices.insert(indices.present);
+
         let queue_priorities = &[1.0];
-        let queue_info = 
-            vk::DeviceQueueCreateInfo::builder()
-            .queue_family_index(indices.graphics)
-            .queue_priorities(queue_priorities);
+        let queue_info = unique_indices
+            .iter()
+            .map(|i| {
+                vk::DeviceQueueCreateInfo::builder()
+                    .queue_family_index(*i)
+                    .queue_priorities(queue_priorities)
+            }).collect::<Vec<_>>();
 
         // Layers específicas ao dispositivo.
         // Em Vulkan moderno  as layers do escopo da instância, isso é pra 
@@ -76,15 +82,15 @@ impl App {
         // Recursos do dispositivo (o qual verificamos a existência no check_physical_device())
         let features = vk::PhysicalDeviceFeatures::builder();
 
-        let queue_infos = &[queue_info];
         let info = vk::DeviceCreateInfo::builder()
-            .queue_create_infos(queue_infos)
+            .queue_create_infos(&queue_info)
             .enabled_layer_names(&layers)
             .enabled_features(&features);
 
         let device = 
             instance.create_device(data.physical_device, &info, None)?;
 
+        data.present_queue = device.get_device_queue(indices.present, 0);
         data.graphics_queue = device.get_device_queue(indices.graphics, 0);
 
         Ok(device)
@@ -220,8 +226,9 @@ impl App {
 
 #[derive(Clone, Debug, Default)]
 pub struct AppData {
-    messenger: vk::DebugUtilsMessengerEXT,
-    physical_device: vk::PhysicalDevice,
-    graphics_queue: vk::Queue,
-    surface: vk::SurfaceKHR,
+    pub messenger: vk::DebugUtilsMessengerEXT,
+    pub physical_device: vk::PhysicalDevice,
+    pub graphics_queue: vk::Queue,
+    pub surface: vk::SurfaceKHR,
+    pub present_queue: vk::Queue
 }

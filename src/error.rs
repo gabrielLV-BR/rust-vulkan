@@ -1,6 +1,6 @@
 use log::*;
 use std::ffi::{c_void, CStr};
-use vulkanalia::{vk::{self, InstanceV1_0}, Instance};
+use vulkanalia::{vk::{self, InstanceV1_0, KhrSurfaceExtension}, Instance};
 use anyhow::{anyhow, Result};
 
 use crate::app::AppData;
@@ -31,6 +31,7 @@ pub extern "system" fn debug_callback(
 #[derive(Copy, Clone, Debug)]
 pub struct QueueFamilyIndices {
     pub graphics: u32,
+    pub present: u32,
 }
 
 impl QueueFamilyIndices {
@@ -46,8 +47,16 @@ impl QueueFamilyIndices {
             .position(|p| p.queue_flags.contains(vk::QueueFlags::GRAPHICS))
             .map(|i| i as u32);
 
-        if let Some(graphics) = graphics {
-            Ok(Self { graphics })
+        let mut present = None;
+        for (index, properties) in properties.iter().enumerate() {
+            if instance.get_physical_device_surface_support_khr(physical_device, index as u32, data.surface)? {
+                present = Some(index as u32);
+                break;
+            } 
+        }
+
+        if let (Some(graphics), Some(present)) = (graphics, present) {
+            Ok(Self { graphics, present })
         } else {
             Err(anyhow!(SuitabilityError("Missing required queue families")))
         }
