@@ -2,16 +2,17 @@ use anyhow::{anyhow, Result};
 use vulkanalia::{
     loader::{LibloadingLoader, LIBRARY},
     prelude::v1_0::*,
-    vk::{ExtDebugUtilsExtension, KhrSurfaceExtension},
+    vk::{ExtDebugUtilsExtension, KhrSurfaceExtension, KhrSwapchainExtension},
     window as vk_window,
 };
 use winit::window::Window;
 
-use std::collections::HashSet;
+use std::{collections::HashSet, simd::SupportedLaneCount};
 use log::*;
 
 use crate::{VALIDATION_ENABLED, VALIDATION_LAYER, 
-    error::{SuitabilityError, QueueFamilyIndices, self}};
+    error::{SuitabilityError, self}, DEVICE_EXTENSIONS,
+    info::{QueueFamilyIndices, SwapchainSupport}};
 
 #[derive(Clone, Debug)]
 pub struct App {
@@ -82,9 +83,15 @@ impl App {
         // Recursos do dispositivo (o qual verificamos a existência no check_physical_device())
         let features = vk::PhysicalDeviceFeatures::builder();
 
+        let extensions = DEVICE_EXTENSIONS
+            .iter()
+            .map(|n| n.as_ptr())
+            .collect::<Vec<_>>();
+
         let info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_info)
             .enabled_layer_names(&layers)
+            .enabled_extension_names(&extensions)
             .enabled_features(&features);
 
         let device = 
@@ -134,7 +141,30 @@ impl App {
         }
 
         QueueFamilyIndices::get(instance, data, physical_device)?;
+
+        let support = SwapchainSupport::get(instance, data, physical_device)?;
+
+        if support.formats.is_empty() || support.present_modes.is_empty() {
+            return Err(anyhow!(SuitabilityError("Insuficient swapchain support")));
+        }
+
         Ok(())
+    }
+
+    pub unsafe fn check_physical_device_extensions(
+        instance: &Instance,
+        physical_device: vk::PhysicalDevice
+    ) -> Result<()> {
+        let extensions = instance
+            .enumerate_device_extension_properties(physical_device, None)?
+            .iter()
+            .map(|e| e.extension_name)
+            .collect::<HashSet<_>>();
+
+        if DEVICE_EXTENSIONS.iter().all(|e| extensions.contains(e)) {
+            return Ok(());
+        }
+        Err(anyhow!(SuitabilityError("Device does not have required extensions")))
     }
 
     pub unsafe fn render(&self, window: &Window) -> Result<()> {

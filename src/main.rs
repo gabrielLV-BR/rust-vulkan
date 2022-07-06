@@ -7,6 +7,7 @@
 
 mod error;
 mod app;
+mod info;
 
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
@@ -15,6 +16,7 @@ use winit::{event_loop::{EventLoop, ControlFlow}, window::WindowBuilder, dpi::Lo
 const VALIDATION_ENABLED: bool = true /* cfg!(debug_assertions) */;
 const VALIDATION_LAYER: vk::ExtensionName =
     vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
+const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
 
 fn main() -> Result<()> {
     // Queremos logs bonitos
@@ -41,6 +43,7 @@ fn main() -> Result<()> {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
+                log::warn!("VAI TOAMR NO CU");
                 destroying = true;
                 *control_flow = ControlFlow::Exit;
                 unsafe {
