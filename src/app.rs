@@ -7,7 +7,7 @@ use vulkanalia::{
 };
 use winit::window::Window;
 
-use std::{collections::HashSet, simd::SupportedLaneCount};
+use std::collections::HashSet;
 use log::*;
 
 use crate::{VALIDATION_ENABLED, VALIDATION_LAYER, 
@@ -45,6 +45,8 @@ impl App {
         App::pick_physical_device(&instance, &mut data)?;
 
         let device = App::create_logical_device(&instance, &mut data)?;
+
+        App::create_swapchain(window, &instance, &device, &mut data)?;
 
         Ok(Self {
             entry,
@@ -142,11 +144,65 @@ impl App {
 
         QueueFamilyIndices::get(instance, data, physical_device)?;
 
-        let support = SwapchainSupport::get(instance, data, physical_device)?;
+        App::check_physical_device_extensions(instance, physical_device)?;
 
+        let support = SwapchainSupport::get(instance, data, physical_device)?;
         if support.formats.is_empty() || support.present_modes.is_empty() {
             return Err(anyhow!(SuitabilityError("Insuficient swapchain support")));
         }
+
+        Ok(())
+    }
+
+    pub unsafe fn create_swapchain(
+        window: &Window, instance: &Instance,
+        device: &Device, data: &mut AppData
+    ) -> Result<()> {
+
+        let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
+        let support = SwapchainSupport::get(instance, data, data.physical_device)?;
+
+        // Formato da Swapchain: Modo de canal de cores e colorspace
+        let surface_format = App::get_swapchain_surface_format(&support.formats);
+        // Present mode: V-buffer, triple buffer...
+        let present_mode = App::get_swapchain_present_mode(&support.present_modes);
+        // Extent: Tamanho da imagem (surface onde vamos desenhar)
+        let extent = App::get_swapchain_extent(window, support.capabilities);
+
+        let mut image_count = support.capabilities.min_image_count + 1;
+
+        if support.capabilities.max_image_count != 0 &&
+            image_count > support.capabilities.max_image_count {
+            image_count = support.capabilities.max_image_count; 
+        }
+
+        let mut queue_family_indices = vec![];
+        let image_sharing_mode = if indices.graphics != indices.present {
+            queue_family_indices.push(indices.graphics);
+            queue_family_indices.push(indices.present);
+            vk::SharingMode::CONCURRENT
+        } else {
+            vk::SharingMode::EXCLUSIVE
+        };
+
+        // Um monstro que descreve exatamente como queremos nossa swapchain
+        let info = vk::SwapchainCreateInfoKHR::builder()
+            .surface(data.surface)
+            .min_image_count(image_count)
+            .image_format(surface_format.format)
+            .image_color_space(surface_format.color_space)
+            .image_extent(extent)
+            .image_array_layers(1)
+            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .image_sharing_mode(image_sharing_mode)
+            .queue_family_indices(&queue_family_indices)
+            .pre_transform(support.capabilities.current_transform)
+            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(present_mode)
+            .clipped(true)
+            .old_swapchain(vk::SwapchainKHR::null());
+
+        data.swapchain = device.create_swapchain_khr(&info, None)?;    
 
         Ok(())
     }
@@ -167,6 +223,53 @@ impl App {
         Err(anyhow!(SuitabilityError("Device does not have required extensions")))
     }
 
+    pub unsafe fn get_swapchain_surface_format(
+        formats: &[vk::SurfaceFormatKHR]
+    ) -> vk::SurfaceFormatKHR {
+        formats
+            .iter()
+            .cloned()
+            .find(|f| {
+                f.format == vk::Format::B8G8R8A8_SRGB &&
+                f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+            }).unwrap_or_else(|| formats[0])
+    }
+
+    pub unsafe fn get_swapchain_present_mode(
+        present_modes: &[vk::PresentModeKHR]
+    ) -> vk::PresentModeKHR {
+        present_modes
+            .iter()
+            .cloned()
+            .find(|f| {
+                *f == vk::PresentModeKHR::MAILBOX
+            }).unwrap_or_else(|| vk::PresentModeKHR::FIFO)
+    }
+
+    pub unsafe fn get_swapchain_extent(
+        window: &Window,
+        capabilites: vk::SurfaceCapabilitiesKHR
+    ) -> vk::Extent2D {
+        if capabilites.current_extent.width != u32::MAX {
+            capabilites.current_extent
+        } else {
+            let size = window.inner_size();
+            let clamp = |min: u32, max: u32, v: u32| min.max(max.min(v));
+            vk::Extent2D::builder()
+            .width(clamp(
+                capabilites.min_image_extent.width,
+                capabilites.max_image_extent.width,
+                size.width
+            ))
+            .height(clamp(
+                capabilites.min_image_extent.height,
+                capabilites.max_image_extent.height,
+                size.height
+            )).build()
+        }
+    }
+
+
     pub unsafe fn render(&self, window: &Window) -> Result<()> {
         Ok(())
     }
@@ -178,6 +281,8 @@ impl App {
                 .destroy_debug_utils_messenger_ext(self.data.messenger, None);
         }
 
+        // ... Nossa swapchain...
+        self.device.destroy_swapchain_khr(self.data.swapchain, None);
         // ... Nosso dispositivo virtual...
         self.device.destroy_device(None);
         // ... Nosso Surface...
@@ -260,5 +365,6 @@ pub struct AppData {
     pub physical_device: vk::PhysicalDevice,
     pub graphics_queue: vk::Queue,
     pub surface: vk::SurfaceKHR,
-    pub present_queue: vk::Queue
+    pub present_queue: vk::Queue,
+    pub swapchain: vk::SwapchainKHR
 }

@@ -54,8 +54,8 @@ impl SwapchainSupport {
   ) -> Result<Self> {
     Ok(
       Self {
-        capabilities: instance.get_physical_device_surface_capabilities_khr(physical_device, data.surface)?,
-        formats: instance.get_physical_device_surface_formats_khr(physical_device, data.surface)?,
+        capabilities:  instance.get_physical_device_surface_capabilities_khr(physical_device, data.surface)?,
+        formats:       instance.get_physical_device_surface_formats_khr(physical_device, data.surface)?,
         present_modes: instance.get_physical_device_surface_present_modes_khr(physical_device, data.surface)?
       }
     )
