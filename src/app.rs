@@ -7,12 +7,14 @@ use vulkanalia::{
 };
 use winit::window::Window;
 
-use std::collections::HashSet;
 use log::*;
+use std::collections::HashSet;
 
-use crate::{VALIDATION_ENABLED, VALIDATION_LAYER, 
-    error::{SuitabilityError, self}, DEVICE_EXTENSIONS,
-    info::{QueueFamilyIndices, SwapchainSupport}};
+use crate::{
+    error::{self, SuitabilityError},
+    info::{QueueFamilyIndices, SwapchainSupport},
+    DEVICE_EXTENSIONS, VALIDATION_ENABLED, VALIDATION_LAYER,
+};
 
 #[derive(Clone, Debug)]
 pub struct App {
@@ -32,10 +34,7 @@ impl App {
         // Cria o Loader, que vai carregar o ponteiro das funçẽos do Vulkan
         let loader = LibloadingLoader::new(LIBRARY)?;
         // Entry realmente carrega os erros e tal
-        let entry = Entry::new(loader)
-            .map_err(
-                |b| anyhow!("{}", b)
-            )?;
+        let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
 
         let mut data = AppData::default();
 
@@ -47,19 +46,18 @@ impl App {
         let device = App::create_logical_device(&instance, &mut data)?;
 
         App::create_swapchain(window, &instance, &device, &mut data)?;
+        App::create_swapchain_image_views(&device, &mut data)?;
 
         Ok(Self {
             entry,
             instance,
             data,
-            device
+            device,
         })
     }
 
-    unsafe fn create_logical_device(instance: &Instance, data: &mut AppData) 
-        -> Result<Device> {
-        let indices = 
-            QueueFamilyIndices::get(instance, data, data.physical_device)?;
+    unsafe fn create_logical_device(instance: &Instance, data: &mut AppData) -> Result<Device> {
+        let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
 
         let mut unique_indices = HashSet::new();
         unique_indices.insert(indices.graphics);
@@ -72,15 +70,18 @@ impl App {
                 vk::DeviceQueueCreateInfo::builder()
                     .queue_family_index(*i)
                     .queue_priorities(queue_priorities)
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         // Layers específicas ao dispositivo.
-        // Em Vulkan moderno  as layers do escopo da instância, isso é pra 
+        // Em Vulkan moderno  as layers do escopo da instância, isso é pra
         // ser compatível com versões anteriores que permitiam extensões
         // especificas para cada dispositivo virtual
         let layers = if VALIDATION_ENABLED {
             vec![VALIDATION_LAYER.as_ptr()]
-        } else { vec![] };
+        } else {
+            vec![]
+        };
 
         // Recursos do dispositivo (o qual verificamos a existência no check_physical_device())
         let features = vk::PhysicalDeviceFeatures::builder();
@@ -96,8 +97,7 @@ impl App {
             .enabled_extension_names(&extensions)
             .enabled_features(&features);
 
-        let device = 
-            instance.create_device(data.physical_device, &info, None)?;
+        let device = instance.create_device(data.physical_device, &info, None)?;
 
         data.present_queue = device.get_device_queue(indices.present, 0);
         data.graphics_queue = device.get_device_queue(indices.graphics, 0);
@@ -105,16 +105,15 @@ impl App {
         Ok(device)
     }
 
-    unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) 
-        -> Result<()> {
-
+    unsafe fn pick_physical_device(instance: &Instance, data: &mut AppData) -> Result<()> {
         for physical_device in instance.enumerate_physical_devices()? {
-            let properties = 
-                instance.get_physical_device_properties(physical_device);
+            let properties = instance.get_physical_device_properties(physical_device);
 
-            if let Err(error) = 
-                App::check_physical_device(instance, data, physical_device) {
-                warn!("Skipping phyisical device ('{}'): {}", properties.device_name, error);
+            if let Err(error) = App::check_physical_device(instance, data, physical_device) {
+                warn!(
+                    "Skipping phyisical device ('{}'): {}",
+                    properties.device_name, error
+                );
             } else {
                 info!("Selected physical device ('{}').", properties.device_name);
                 data.physical_device = physical_device;
@@ -126,18 +125,16 @@ impl App {
     }
 
     unsafe fn check_physical_device(
-            instance: &Instance, 
-            data: &mut AppData, 
-            physical_device: vk::PhysicalDevice
-        ) -> Result<()> {
-        let properties = 
-            instance.get_physical_device_properties(physical_device);
+        instance: &Instance,
+        data: &mut AppData,
+        physical_device: vk::PhysicalDevice,
+    ) -> Result<()> {
+        let properties = instance.get_physical_device_properties(physical_device);
         if properties.device_type != vk::PhysicalDeviceType::DISCRETE_GPU {
             return Err(anyhow!(SuitabilityError("Only discrete GPUs supported")));
         }
-        
-        let features = 
-            instance.get_physical_device_features(physical_device);
+
+        let features = instance.get_physical_device_features(physical_device);
         if features.geometry_shader != vk::TRUE {
             return Err(anyhow!(SuitabilityError("Missing geometry shader support")));
         }
@@ -155,10 +152,11 @@ impl App {
     }
 
     pub unsafe fn create_swapchain(
-        window: &Window, instance: &Instance,
-        device: &Device, data: &mut AppData
+        window: &Window,
+        instance: &Instance,
+        device: &Device,
+        data: &mut AppData,
     ) -> Result<()> {
-
         let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
         let support = SwapchainSupport::get(instance, data, data.physical_device)?;
 
@@ -171,9 +169,10 @@ impl App {
 
         let mut image_count = support.capabilities.min_image_count + 1;
 
-        if support.capabilities.max_image_count != 0 &&
-            image_count > support.capabilities.max_image_count {
-            image_count = support.capabilities.max_image_count; 
+        if support.capabilities.max_image_count != 0
+            && image_count > support.capabilities.max_image_count
+        {
+            image_count = support.capabilities.max_image_count;
         }
 
         let mut queue_family_indices = vec![];
@@ -202,14 +201,50 @@ impl App {
             .clipped(true)
             .old_swapchain(vk::SwapchainKHR::null());
 
-        data.swapchain = device.create_swapchain_khr(&info, None)?;    
+        data.swapchain = device.create_swapchain_khr(&info, None)?;
+        data.swapchain_images = device.get_swapchain_images_khr(data.swapchain)?;
+        data.swapchain_format = surface_format.format;
+        data.swapchain_extent = extent;
+
+        Ok(())
+    }
+
+    pub unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) -> Result<()> {
+        let components = vk::ComponentMapping::builder()
+            .r(vk::ComponentSwizzle::IDENTITY)
+            .g(vk::ComponentSwizzle::IDENTITY)
+            .b(vk::ComponentSwizzle::IDENTITY)
+            .a(vk::ComponentSwizzle::IDENTITY);
+
+        let subresource_range = vk::ImageSubresourceRange::builder()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .base_mip_level(0)
+            .level_count(1)
+            .base_array_layer(0)
+            .layer_count(0);
+
+        data.swapchain_image_views = data
+            .swapchain_images
+            .iter()
+            .map(|i| {
+                let info = vk::ImageViewCreateInfo::builder()
+                    .image(*i)
+                    .view_type(vk::ImageViewType::_2D)
+                    .format(data.swapchain_format)
+                    .components(components)
+                    .subresource_range(subresource_range)
+                    .build();
+
+                device.create_image_view(&info, None)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(())
     }
 
     pub unsafe fn check_physical_device_extensions(
         instance: &Instance,
-        physical_device: vk::PhysicalDevice
+        physical_device: vk::PhysicalDevice,
     ) -> Result<()> {
         let extensions = instance
             .enumerate_device_extension_properties(physical_device, None)?
@@ -220,35 +255,37 @@ impl App {
         if DEVICE_EXTENSIONS.iter().all(|e| extensions.contains(e)) {
             return Ok(());
         }
-        Err(anyhow!(SuitabilityError("Device does not have required extensions")))
+        Err(anyhow!(SuitabilityError(
+            "Device does not have required extensions"
+        )))
     }
 
     pub unsafe fn get_swapchain_surface_format(
-        formats: &[vk::SurfaceFormatKHR]
+        formats: &[vk::SurfaceFormatKHR],
     ) -> vk::SurfaceFormatKHR {
         formats
             .iter()
             .cloned()
             .find(|f| {
-                f.format == vk::Format::B8G8R8A8_SRGB &&
-                f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
-            }).unwrap_or_else(|| formats[0])
+                f.format == vk::Format::B8G8R8A8_SRGB
+                    && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+            })
+            .unwrap_or_else(|| formats[0])
     }
 
     pub unsafe fn get_swapchain_present_mode(
-        present_modes: &[vk::PresentModeKHR]
+        present_modes: &[vk::PresentModeKHR],
     ) -> vk::PresentModeKHR {
         present_modes
             .iter()
             .cloned()
-            .find(|f| {
-                *f == vk::PresentModeKHR::MAILBOX
-            }).unwrap_or_else(|| vk::PresentModeKHR::FIFO)
+            .find(|f| *f == vk::PresentModeKHR::MAILBOX)
+            .unwrap_or_else(|| vk::PresentModeKHR::FIFO)
     }
 
     pub unsafe fn get_swapchain_extent(
         window: &Window,
-        capabilites: vk::SurfaceCapabilitiesKHR
+        capabilites: vk::SurfaceCapabilitiesKHR,
     ) -> vk::Extent2D {
         if capabilites.current_extent.width != u32::MAX {
             capabilites.current_extent
@@ -256,19 +293,19 @@ impl App {
             let size = window.inner_size();
             let clamp = |min: u32, max: u32, v: u32| min.max(max.min(v));
             vk::Extent2D::builder()
-            .width(clamp(
-                capabilites.min_image_extent.width,
-                capabilites.max_image_extent.width,
-                size.width
-            ))
-            .height(clamp(
-                capabilites.min_image_extent.height,
-                capabilites.max_image_extent.height,
-                size.height
-            )).build()
+                .width(clamp(
+                    capabilites.min_image_extent.width,
+                    capabilites.max_image_extent.width,
+                    size.width,
+                ))
+                .height(clamp(
+                    capabilites.min_image_extent.height,
+                    capabilites.max_image_extent.height,
+                    size.height,
+                ))
+                .build()
         }
     }
-
 
     pub unsafe fn render(&self, window: &Window) -> Result<()> {
         Ok(())
@@ -297,8 +334,7 @@ impl App {
         data: &mut AppData,
     ) -> Result<Instance> {
         // Descreve a aplicação
-        let application_info = 
-            vk::ApplicationInfo::builder()
+        let application_info = vk::ApplicationInfo::builder()
             .application_name(b"Vulkan Tutorial\0")
             .application_version(vk::make_version(1, 0, 0))
             .engine_name(b"No Engine\0")
@@ -306,8 +342,7 @@ impl App {
             .api_version(vk::make_version(1, 0, 0));
 
         // Extensões necessárias para a execução
-        let mut extensions = 
-            vk_window::get_required_instance_extensions(window)
+        let mut extensions = vk_window::get_required_instance_extensions(window)
             .iter()
             .map(|e| e.as_ptr())
             .collect::<Vec<_>>();
@@ -345,8 +380,7 @@ impl App {
 
         // Caso a validação esteja ligada, adicionamos um logger customizado
         if VALIDATION_ENABLED {
-            let debug_info = 
-                vk::DebugUtilsMessengerCreateInfoEXT::builder()
+            let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
                 .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::all())
                 .message_type(vk::DebugUtilsMessageTypeFlagsEXT::all())
                 .user_callback(Some(error::debug_callback));
@@ -366,5 +400,9 @@ pub struct AppData {
     pub graphics_queue: vk::Queue,
     pub surface: vk::SurfaceKHR,
     pub present_queue: vk::Queue,
-    pub swapchain: vk::SwapchainKHR
+    pub swapchain: vk::SwapchainKHR,
+    pub swapchain_images: Vec<vk::Image>,
+    pub swapchain_format: vk::Format,
+    pub swapchain_extent: vk::Extent2D,
+    pub swapchain_image_views: Vec<vk::ImageView>,
 }
