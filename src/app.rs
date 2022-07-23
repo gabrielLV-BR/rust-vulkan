@@ -46,6 +46,7 @@ impl App {
         let device = App::create_logical_device(&instance, &mut data)?;
 
         data.swapchain = SwapchainData::create_swapchain(window, &instance, &device, &mut data)?;
+        App::create_pipeline(&device, &mut data)?;
         // SwapchainData::create_swapchain_image_views(&device, &mut data)?;
 
         Ok(Self {
@@ -149,6 +150,47 @@ impl App {
         }
 
         Ok(())
+    }
+
+    pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
+        let vertex_shader = include_bytes!("resources/shaders/vert.spv");
+        let fragment_shader = include_bytes!("resources/shaders/frag.spv");
+
+        let vertex_shader_module = App::create_shader_module(device, &vertex_shader[..])?;
+        let fragment_shader_module = App::create_shader_module(device, &fragment_shader[..])?;
+
+        let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
+            .stage(vk::ShaderStageFlags::VERTEX)
+            .module(vertex_shader_module)
+            .name(b"main\0");
+
+        let frag_stage = vk::PipelineShaderStageCreateInfo::builder()
+            .stage(vk::ShaderStageFlags::FRAGMENT)
+            .module(fragment_shader_module)
+            // ```specialization_info``` define constantes da shader. O benefício dessas constantes
+            // é a eliminação de IFs contendo elas
+            // .specialization_info(specialization_info)
+            .name(b"main\0");
+
+        device.destroy_shader_module(vertex_shader_module, None);
+        device.destroy_shader_module(fragment_shader_module, None);
+
+        Ok(())
+    }
+
+    pub unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::ShaderModule> {
+        let bytecode = Vec::<u8>::from(bytecode);
+        let (prefix, code, suffix) = bytecode.align_to::<u32>();
+
+        if !prefix.is_empty() || !suffix.is_empty() {
+            return Err(anyhow!("Shader bytecode is not properly aligned"));
+        }
+
+        let info = vk::ShaderModuleCreateInfo::builder()
+            .code_size(bytecode.len())
+            .code(code);
+
+        Ok(device.create_shader_module(&info, None)?)
     }
 
     pub unsafe fn render(&self, window: &Window) -> Result<()> {
